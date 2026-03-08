@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S3Prism</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #0c0c0c;
+    --bg-1: #141414;
+    --bg-2: #1c1c1c;
+    --bg-3: #242424;
+    --bg-hover: #2a2a2a;
+    --border: #262626;
+    --border-active: #3a3a3a;
+    --text-0: #ececec;
+    --text-1: #a0a0a0;
+    --text-2: #666;
+    --accent: #5b9fd4;
+    --accent-dim: #3d6f99;
+    --green: #5cb77a;
+    --green-dim: #1e3a28;
+    --yellow: #c9a84c;
+    --yellow-dim: #3a3120;
+    --red: #c75a5a;
+    --red-dim: #3a1e1e;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif; background: var(--bg-1); color: var(--text-0); min-height: 100vh; display: flex; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+  /* Sidebar */
+  .sidebar { width: 220px; background: var(--bg-0); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 10; }
+  .sidebar-brand { padding: 20px 16px 16px; }
+  .sidebar-brand h1 { font-size: 16px; font-weight: 600; color: var(--text-0); letter-spacing: -0.3px; }
+  .sidebar-brand p { font-size: 12px; color: var(--text-2); margin-top: 1px; }
+  .sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+  .nav-section { padding: 16px 16px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-2); font-weight: 500; }
+  .nav-section:first-child { padding-top: 4px; }
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 16px; color: var(--text-1); cursor: pointer; font-size: 14px; border: none; background: none; width: 100%; text-align: left; border-radius: 0; transition: color 0.1s; }
+  .nav-item:hover { color: var(--text-0); background: var(--bg-2); }
+  .nav-item.active { color: var(--text-0); background: var(--bg-2); }
+  .nav-item.active::before { content: ''; position: absolute; left: 0; width: 2px; height: 20px; background: var(--accent); border-radius: 0 1px 1px 0; }
+  .nav-item { position: relative; }
+  .nav-icon { width: 16px; text-align: center; font-size: 13px; flex-shrink: 0; opacity: 0.5; }
+  .nav-item.active .nav-icon { opacity: 0.8; }
+  .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+  .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+  .dot-green { background: var(--green); }
+  .dot-yellow { background: var(--yellow); }
+
+  /* Main */
+  .main { margin-left: 220px; flex: 1; min-height: 100vh; }
+  .topbar { padding: 12px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--bg-0); }
+  .topbar h2 { font-size: 15px; font-weight: 500; color: var(--text-1); }
+  .topbar-actions { display: flex; gap: 6px; align-items: center; }
+  .content { padding: 20px 24px; max-width: 1000px; }
+
+  /* Cards */
+  .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 12px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-header h3 { font-size: 13px; font-weight: 500; color: var(--text-1); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Stats */
+  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .stat-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .stat-card .value { font-size: 24px; font-weight: 600; color: var(--text-0); font-family: var(--mono); }
+  .stat-card .label { font-size: 11px; color: var(--text-2); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 8px 12px; color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); font-weight: 500; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-1); }
+  td strong { color: var(--text-0); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Forms */
+  input, select { background: var(--bg-1); border: 1px solid var(--border); color: var(--text-0); padding: 8px 12px; border-radius: 4px; width: 100%; font-size: 14px; font-family: inherit; }
+  input:focus, select:focus { outline: none; border-color: var(--border-active); }
+  input::placeholder { color: var(--text-2); }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 3px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 12px; color: var(--text-2); font-weight: 500; }
+
+  /* Buttons */
+  button { padding: 7px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit; transition: background 0.1s; }
+  .btn-primary { background: var(--accent-dim); color: var(--text-0); }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-primary:disabled { opacity: 0.4; cursor: default; }
+  .btn-danger { background: var(--red-dim); color: var(--red); }
+  .btn-danger:hover { background: #4a2222; }
+  .btn-ghost { background: transparent; color: var(--text-1); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--bg-3); color: var(--text-0); border-color: var(--border-active); }
+  .btn-sm { padding: 4px 8px; font-size: 11px; }
+  .btn-xs { padding: 3px 7px; font-size: 11px; }
+  .actions { display: flex; gap: 6px; margin-top: 12px; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+  .badge-green { background: var(--green-dim); color: var(--green); }
+  .badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
+  .badge-red { background: var(--red-dim); color: var(--red); }
+  .badge-muted { background: var(--bg-3); color: var(--text-1); }
+
+  /* Alert */
+  .alert { padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .alert-info { background: #1a2633; color: var(--accent); border: 1px solid #1e3044; }
+  .alert-error { background: var(--red-dim); color: var(--red); border: 1px solid #4a2222; }
+  .alert-success { background: var(--green-dim); color: var(--green); border: 1px solid #264a33; }
+  .hidden { display: none !important; }
+
+  /* Region Cards */
+  .geo-group { margin-bottom: 16px; }
+  .geo-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-2); margin-bottom: 6px; font-weight: 500; }
+  .region-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .region-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; cursor: pointer; transition: border-color 0.1s; position: relative; }
+  .region-card:hover { border-color: var(--border-active); }
+  .region-card.selected { border-color: var(--accent-dim); }
+  .region-card .rc-name { font-weight: 500; font-size: 14px; color: var(--text-0); }
+  .region-card .rc-region { font-size: 12px; color: var(--text-2); margin-top: 1px; font-family: var(--mono); }
+  .region-card .rc-endpoint { font-size: 11px; color: var(--text-2); margin-top: 3px; word-break: break-all; }
+  .region-card .rc-ping { position: absolute; top: 10px; right: 10px; font-size: 13px; font-weight: 500; font-family: var(--mono); }
+  .ping-fast { color: var(--green); }
+  .ping-medium { color: var(--yellow); }
+  .ping-slow { color: var(--red); }
+  .ping-loading { color: var(--text-2); }
+
+  /* Latency Bar */
+  .latency-bar { height: 2px; background: var(--border); border-radius: 1px; margin-top: 6px; overflow: hidden; }
+  .latency-bar-fill { height: 100%; border-radius: 1px; transition: width 0.3s; }
+
+  /* Login */
+  .login-overlay { position: fixed; inset: 0; background: var(--bg-0); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .login-box { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 32px; width: 340px; }
+  .login-box h1 { font-size: 16px; font-weight: 600; margin-bottom: 2px; color: var(--text-0); }
+  .login-box p { color: var(--text-2); margin-bottom: 20px; font-size: 12px; }
+  .login-box input { margin-bottom: 10px; }
+  .login-box .btn-primary { width: 100%; padding: 8px; }
+  .login-error { color: var(--red); font-size: 11px; margin-top: 6px; }
+
+  /* Presets */
+  .preset-grid { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .preset-btn { padding: 8px 12px; background: var(--bg-1); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; text-align: left; font-family: inherit; color: var(--text-0); transition: border-color 0.1s; }
+  .preset-btn:hover { border-color: var(--border-active); }
+  .preset-btn .preset-label { font-size: 13px; font-weight: 500; font-family: var(--mono); }
+  .preset-btn .preset-detail { font-size: 10px; color: var(--text-2); margin-top: 1px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .sidebar { width: 56px; }
+    .sidebar-brand p, .nav-section, .nav-item span:not(.nav-icon), .sidebar-footer { display: none; }
+    .sidebar-brand h1 { font-size: 12px; text-align: center; }
+    .main { margin-left: 56px; }
+    .content { padding: 12px; }
+    .form-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-overlay" class="login-overlay">
+  <div class="login-box">
+    <h1>S3Prism</h1>
+    <p>Enter management password to continue.</p>
+    <input id="login-password" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-primary" onclick="doLogin()">Sign In</button>
+    <div id="login-error" class="login-error hidden"></div>
+  </div>
+</div>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-brand">
+    <h1>S3Prism</h1>
+    <p>Management</p>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Overview</div>
+    <button class="nav-item active" onclick="navigate('dashboard', this)">
+      <span class="nav-icon">~</span><span>Dashboard</span>
+    </button>
+    <div class="nav-section">Configuration</div>
+    <button class="nav-item" onclick="navigate('sites', this)">
+      <span class="nav-icon">&gt;</span><span>Sites</span>
+    </button>
+    <button class="nav-item" onclick="navigate('regions', this)">
+      <span class="nav-icon">&gt;</span><span>Regions</span>
+    </button>
+    <button class="nav-item" onclick="navigate('erasure', this)">
+      <span class="nav-icon">&gt;</span><span>Erasure Coding</span>
+    </button>
+    <div class="nav-section">Storage</div>
+    <button class="nav-item" onclick="navigate('buckets', this)">
+      <span class="nav-icon">&gt;</span><span>Buckets</span>
+    </button>
+    <button class="nav-item" onclick="navigate('purge', this)">
+      <span class="nav-icon">&gt;</span><span>Purge Queue</span>
+    </button>
+    <div class="nav-section">System</div>
+    <button class="nav-item" onclick="navigate('config', this)">
+      <span class="nav-icon">&gt;</span><span>Export / Import</span>
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <span id="sidebar-status"><span class="status-dot dot-yellow"></span> Loading</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <h2 id="page-title">Dashboard</h2>
+    <div class="topbar-actions">
+      <button class="btn-ghost btn-sm" onclick="loadStatus()">Refresh</button>
+      <button class="btn-ghost btn-sm" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div id="alert" class="alert hidden"></div>
+
+    <!-- Dashboard -->
+    <div id="page-dashboard">
+      <div id="stats-row" class="stats-row"></div>
+      <div class="card">
+        <div class="card-header"><h3>Sites</h3></div>
+        <div id="dashboard-sites" style="color:var(--text-2)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Sites -->
+    <div id="page-sites" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h3>Backend Sites</h3>
+          <button class="btn-ghost btn-sm" onclick="loadSites()">Refresh</button>
+        </div>
+        <div id="sites-list" style="color:var(--text-2)">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Add Site</h3></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Name</label><input id="site-name" placeholder="us-east-1"></div>
+          <div class="form-group"><label>Region</label><input id="site-region" placeholder="us-east-1"></div>
+          <div class="form-group full"><label>Endpoint</label><input id="site-endpoint" placeholder="https://s3.us-east-1.wasabisys.com"></div>
+          <div class="form-group"><label>Access Key</label><input id="site-ak" placeholder="Access Key ID"></div>
+          <div class="form-group"><label>Secret Key</label><input id="site-sk" type="password" placeholder="Secret Access Key"></div>
+          <div class="form-group"><label>URL Style</label>
+            <select id="site-style"><option value="path">Path</option><option value="virtualhost">Virtual Host</option></select>
+          </div>
+          <div class="form-group"><label>Priority</label><input id="site-priority" type="number" value="0" min="0"></div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" onclick="addSite()">Add Site</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Regions -->
+    <div id="page-regions" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h3>Wasabi Region Discovery</h3>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="deep-duration" style="width:auto;padding:4px 8px">
+              <option value="15">15s</option>
+              <option value="30" selected>30s</option>
+              <option value="60">60s</option>
+            </select>
+            <button class="btn-primary btn-sm" id="btn-ping-all" onclick="pingAllRegions()">Test</button>
+            <button class="btn-ghost btn-sm" id="btn-stop-ping" onclick="stopPingTest()" style="display:none">Stop</button>
+            <button class="btn-ghost btn-sm" onclick="loadWasabiRegions()">Refresh</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+          <div class="form-group"><label>Wasabi Access Key</label><input id="wasabi-ak" placeholder="Shared access key" oninput="onCredsChanged()"></div>
+          <div class="form-group"><label>Wasabi Secret Key</label><input id="wasabi-sk" type="password" placeholder="Shared secret key" oninput="onCredsChanged()"></div>
+        </div>
+        <div id="ping-progress" class="hidden" style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span id="ping-phase" style="font-size:11px;color:var(--text-2)"></span>
+            <span id="ping-timer" style="font-size:11px;font-weight:500;color:var(--text-1);font-family:var(--mono)"></span>
+          </div>
+          <div style="height:2px;background:var(--border);border-radius:1px;overflow:hidden">
+            <div id="ping-progress-bar" style="height:100%;background:var(--accent-dim);border-radius:1px;transition:width 0.5s;width:0%"></div>
+          </div>
+        </div>
+        <div id="regions-content" style="color:var(--text-2)">Loading regions...</div>
+      </div>
+      <div id="recommendations-panel" class="card hidden">
+        <div class="card-header"><h3>Results</h3></div>
+        <div id="recommendations-content"></div>
+        <div id="auto-setup" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn-primary" onclick="autoCreateSites()" id="btn-auto-create">Create Selected Sites</button>
+            <span style="font-size:11px;color:var(--text-2)" id="auto-setup-hint"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Erasure Coding -->
+    <div id="page-erasure" class="hidden">
+      <div class="card">
+        <div class="card-header"><h3>Erasure Coding</h3></div>
+        <div style="margin-bottom:16px">
+          <label style="margin-bottom:6px;display:block">Presets</label>
+          <div class="preset-grid">
+            <button class="preset-btn" onclick="applyEcPreset(2,1)">
+              <div class="preset-label">2+1</div>
+              <div class="preset-detail">3 sites, 1.5x storage, 1 failure</div>
+            </button>
+            <button class="preset-btn" onclick="applyEcPreset(3,2)">
+              <div class="preset-label">3+2</div>
+              <div class="preset-detail">5 sites, 1.67x storage, 2 failures</div>
+            </button>
+            <button class="preset-btn" onclick="applyEcPreset(4,2)">
+              <div class="preset-label">4+2</div>
+              <div class="preset-detail">6 sites, 1.5x storage, 2 failures</div>
+            </button>
+            <button class="preset-btn" onclick="applyEcPreset(6,3)">
+              <div class="preset-label">6+3</div>
+              <div class="preset-detail">9 sites, 1.5x storage, 3 failures</div>
+            </button>
+            <button class="preset-btn" onclick="applyEcPreset(8,4)">
+              <div class="preset-label">8+4</div>
+              <div class="preset-detail">12 sites, 1.5x storage, 4 failures</div>
+            </button>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-group"><label>Data Chunks (k)</label><input id="ec-data" type="number" min="1"></div>
+          <div class="form-group"><label>Parity Chunks (m)</label><input id="ec-parity" type="number" min="1"></div>
+          <div class="form-group"><label>Storage Mode</label>
+            <select id="ec-mode"><option value="replica">Replica</option><option value="erasure">Erasure</option><option value="hybrid">Hybrid</option></select>
+          </div>
+          <div class="form-group"><label>Hybrid Threshold (bytes)</label><input id="ec-threshold" type="number"></div>
+          <div class="form-group"><label>Block Size (bytes)</label><input id="ec-block" type="number"></div>
+          <div class="form-group"><label>Read Strategy</label>
+            <select id="ec-read"><option value="fan_out_all">Fan Out All</option><option value="fetch_minimum">Fetch Minimum</option></select>
+          </div>
+          <div class="form-group"><label>Write Distribution</label>
+            <select id="ec-write-dist"><option value="shuffle">Shuffle</option><option value="priority">Priority</option></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" onclick="saveErasure()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buckets -->
+    <div id="page-buckets" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h3>Buckets</h3>
+          <button class="btn-ghost btn-sm" onclick="loadBuckets()">Refresh</button>
+        </div>
+        <div id="buckets-list" style="color:var(--text-2)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Purge Queue -->
+    <div id="page-purge" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h3>Purge Queue</h3>
+          <button class="btn-ghost btn-sm" onclick="loadPurge()">Refresh</button>
+        </div>
+        <div id="purge-info" style="color:var(--text-2)">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div id="page-config" class="hidden">
+      <div class="card">
+        <div class="card-header"><h3>Export / Import</h3></div>
+        <div class="actions" style="margin-top:0;margin-bottom:12px">
+          <button class="btn-primary" onclick="exportConfig()">Export Config</button>
+          <button class="btn-ghost" onclick="document.getElementById('config-import-input').click()">Import Config</button>
+          <input type="file" id="config-import-input" accept=".json" style="display:none" onchange="importConfig(event)">
+        </div>
+        <pre id="config-preview" style="background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:12px;font-size:11px;max-height:400px;overflow:auto;color:var(--text-1);white-space:pre-wrap;display:none;font-family:var(--mono)"></pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = '';
+let authToken = sessionStorage.getItem('s3prism_token') || '';
+let wasabiRegionsCache = null;
+
+async function checkAuth() {
+  try {
+    const resp = await fetch(API + '/api/auth/check', { method: 'POST' });
+    const data = await resp.json();
+    if (!data.auth_required) {
+      document.getElementById('login-overlay').classList.add('hidden');
+      init();
+      return;
+    }
+    if (authToken) {
+      const test = await fetch(API + '/api/status', {
+        headers: { 'Authorization': 'Bearer ' + authToken }
+      });
+      if (test.ok) {
+        document.getElementById('login-overlay').classList.add('hidden');
+        init();
+        return;
+      }
+      authToken = '';
+      sessionStorage.removeItem('s3prism_token');
+    }
+  } catch (e) {}
+}
+
+function doLogin() {
+  const pw = document.getElementById('login-password').value;
+  if (!pw) return;
+  fetch(API + '/api/status', {
+    headers: { 'Authorization': 'Bearer ' + pw }
+  }).then(r => {
+    if (r.ok) {
+      authToken = pw;
+      sessionStorage.setItem('s3prism_token', pw);
+      document.getElementById('login-overlay').classList.add('hidden');
+      init();
+    } else {
+      document.getElementById('login-error').textContent = 'Invalid password';
+      document.getElementById('login-error').classList.remove('hidden');
+    }
+  }).catch(() => {
+    document.getElementById('login-error').textContent = 'Cannot reach server';
+    document.getElementById('login-error').classList.remove('hidden');
+  });
+}
+
+function doLogout() {
+  authToken = '';
+  sessionStorage.removeItem('s3prism_token');
+  location.reload();
+}
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  const resp = await fetch(API + path, { ...opts, headers });
+  if (resp.status === 401) { doLogout(); throw new Error('Unauthorized'); }
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(err.error || resp.statusText);
+  }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+function showAlert(msg, type = 'info') {
+  const el = document.getElementById('alert');
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+function navigate(page, btn) {
+  document.querySelectorAll('[id^="page-"]').forEach(el => el.classList.add('hidden'));
+  document.getElementById('page-' + page).classList.remove('hidden');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const titles = { dashboard:'Dashboard', sites:'Sites', regions:'Regions', erasure:'Erasure Coding', buckets:'Buckets', purge:'Purge Queue', config:'Export / Import' };
+  document.getElementById('page-title').textContent = titles[page] || page;
+  if (page === 'sites') loadSites();
+  if (page === 'regions') loadWasabiRegions();
+  if (page === 'erasure') loadErasure();
+  if (page === 'buckets') loadBuckets();
+  if (page === 'purge') loadPurge();
+}
+
+async function loadStatus() {
+  try {
+    const s = await api('/api/status');
+    document.getElementById('stats-row').innerHTML = `
+      <div class="stat-card"><div class="value">${s.site_count}</div><div class="label">Sites</div></div>
+      <div class="stat-card"><div class="value">${s.bucket_count}</div><div class="label">Buckets</div></div>
+      <div class="stat-card"><div class="value">${s.data_chunks}+${s.parity_chunks}</div><div class="label">EC Config</div></div>
+      <div class="stat-card"><div class="value">${s.storage_mode}</div><div class="label">Mode</div></div>
+      <div class="stat-card"><div class="value">${s.purge_queue_depth}</div><div class="label">Purge Depth</div></div>
+      <div class="stat-card"><div class="value"><span class="badge ${s.configured ? 'badge-green' : 'badge-yellow'}">${s.configured ? 'ready' : 'setup'}</span></div><div class="label">Status</div></div>
+    `;
+    const dot = s.configured ? 'dot-green' : 'dot-yellow';
+    const label = s.configured ? 'Connected' : 'Setup required';
+    document.getElementById('sidebar-status').innerHTML = `<span class="status-dot ${dot}"></span> ${label}`;
+  } catch (e) { showAlert('Failed to load status: ' + e.message, 'error'); }
+}
+
+async function loadDashboardSites() {
+  try {
+    const sites = await api('/api/sites');
+    if (sites.length === 0) {
+      document.getElementById('dashboard-sites').innerHTML = '<span style="font-size:12px">No sites configured. Add sites from the Regions page.</span>';
+      return;
+    }
+    let html = '<table><tr><th>Name</th><th>Region</th><th>Endpoint</th><th>Priority</th><th>Status</th></tr>';
+    for (const s of sites) {
+      html += `<tr>
+        <td><strong>${esc(s.name)}</strong></td>
+        <td style="font-family:var(--mono);font-size:12px">${esc(s.region)}</td>
+        <td style="font-size:11px">${esc(s.endpoint)}</td>
+        <td>${s.priority}</td>
+        <td><span class="badge badge-green">active</span></td>
+      </tr>`;
+    }
+    html += '</table>';
+    document.getElementById('dashboard-sites').innerHTML = html;
+  } catch (e) { document.getElementById('dashboard-sites').innerHTML = '<span style="color:var(--red);font-size:12px">Failed to load</span>'; }
+}
+
+async function loadSites() {
+  try {
+    const sites = await api('/api/sites');
+    if (sites.length === 0) {
+      document.getElementById('sites-list').innerHTML = '<span style="font-size:12px">No sites configured.</span>';
+      return;
+    }
+    let html = '<table><tr><th>Name</th><th>Region</th><th>Endpoint</th><th>Style</th><th>Priority</th><th></th></tr>';
+    for (const s of sites) {
+      html += `<tr>
+        <td><strong>${esc(s.name)}</strong></td>
+        <td style="font-family:var(--mono);font-size:12px">${esc(s.region)}</td>
+        <td style="font-size:11px">${esc(s.endpoint)}</td>
+        <td>${esc(s.url_style)}</td>
+        <td>${s.priority}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-ghost btn-xs" onclick="testSite('${esc(s.name)}')">Test</button>
+          <button class="btn-danger btn-xs" onclick="removeSite('${esc(s.name)}')">Remove</button>
+        </td>
+      </tr>`;
+    }
+    html += '</table>';
+    document.getElementById('sites-list').innerHTML = html;
+  } catch (e) { showAlert('Failed to load sites: ' + e.message, 'error'); }
+}
+
+async function addSite() {
+  try {
+    await api('/api/sites', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: document.getElementById('site-name').value,
+        region: document.getElementById('site-region').value,
+        endpoint: document.getElementById('site-endpoint').value,
+        access_key: document.getElementById('site-ak').value,
+        secret_key: document.getElementById('site-sk').value,
+        url_style: document.getElementById('site-style').value,
+        priority: parseInt(document.getElementById('site-priority').value) || 0,
+      }),
+    });
+    showAlert('Site added', 'success');
+    document.querySelectorAll('#page-sites input:not([type=number])').forEach(i => i.value = '');
+    loadSites(); loadStatus(); loadDashboardSites();
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function removeSite(name) {
+  if (!confirm(`Remove site "${name}"?`)) return;
+  try {
+    await api(`/api/sites/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    showAlert('Site removed', 'success');
+    loadSites(); loadStatus(); loadDashboardSites();
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function testSite(name) {
+  try {
+    const r = await api(`/api/sites/${encodeURIComponent(name)}/test`, { method: 'POST' });
+    if (r.reachable) showAlert(`${name}: reachable (${r.latency_ms}ms)`, 'success');
+    else showAlert(`${name}: unreachable - ${r.error}`, 'error');
+  } catch (e) { showAlert('Test failed: ' + e.message, 'error'); }
+}
+
+async function loadWasabiRegions() {
+  const el = document.getElementById('regions-content');
+  el.innerHTML = 'Fetching regions...';
+  try {
+    const regions = await api('/api/wasabi/regions');
+    wasabiRegionsCache = regions;
+    renderRegions(regions);
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--red)">Failed: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderRegions(regions, closestGeo) {
+  const geos = {};
+  for (const r of regions) {
+    if (!geos[r.geo]) geos[r.geo] = [];
+    geos[r.geo].push(r);
+  }
+  let geoOrder = ['Americas', 'Europe', 'Asia Pacific', 'Other'];
+  if (closestGeo) geoOrder = [closestGeo, ...geoOrder.filter(g => g !== closestGeo)];
+
+  let html = '';
+  for (const geo of geoOrder) {
+    if (!geos[geo]) continue;
+    const isClosest = geo === closestGeo;
+    const tag = isClosest ? ' <span class="badge badge-green">closest</span>' : '';
+    html += `<div class="geo-group"><div class="geo-header">${geo}${tag}</div><div class="region-grid">`;
+    for (const r of geos[geo]) {
+      const pingHtml = r._ping ? formatPing(r._ping) : '';
+      const latencyBar = r._ping ? renderLatencyBar(r._ping) : '';
+      const deepTag = r._ping?._deep ? '<span class="badge badge-muted" style="font-size:9px;margin-top:3px">deep</span>' : '';
+      html += `<div class="region-card" id="rc-${r.region}" onclick="selectRegion('${r.region}')">
+        <div class="rc-name">${esc(r.name)}</div>
+        <div class="rc-region">${esc(r.region)} ${deepTag}</div>
+        <div class="rc-endpoint">${esc(r.endpoint)}</div>
+        <div class="rc-ping">${pingHtml}</div>
+        ${latencyBar}
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+  document.getElementById('regions-content').innerHTML = html;
+}
+
+function formatPing(ping) {
+  if (ping.loading) return '<span class="ping-loading">...</span>';
+  if (!ping.reachable) return '<span class="ping-slow">err</span>';
+  const ms = ping.min_ms;
+  const cls = ms < 150 ? 'ping-fast' : ms < 400 ? 'ping-medium' : 'ping-slow';
+  return `<span class="${cls}">${ms}ms</span>`;
+}
+
+function renderLatencyBar(ping) {
+  if (!ping.reachable || ping.loading) return '';
+  const displayMs = ping._p50 || ping.avg_ms;
+  const pct = Math.min(100, (displayMs / 1000) * 100);
+  const color = displayMs < 150 ? 'var(--green)' : displayMs < 400 ? 'var(--yellow)' : 'var(--red)';
+  let detail = '';
+  if (ping._p50) {
+    detail = `p50 ${ping._p50} / p95 ${ping._p95}ms (${ping.pings.length})`;
+  } else {
+    detail = `avg ${ping.avg_ms}ms`;
+    if (ping.pings.length > 1) detail += ` (${ping.pings.length})`;
+  }
+  return `<div class="latency-bar"><div class="latency-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    <div style="font-size:10px;color:var(--text-2);margin-top:3px">${detail}</div>`;
+}
+
+let selectedRegions = new Set();
+
+function selectRegion(regionId) {
+  if (selectedRegions.has(regionId)) selectedRegions.delete(regionId);
+  else selectedRegions.add(regionId);
+  const card = document.getElementById('rc-' + regionId);
+  if (card) card.classList.toggle('selected', selectedRegions.has(regionId));
+  updateAutoSetupHint();
+}
+
+function updateAutoSetupHint() {
+  const ak = document.getElementById('wasabi-ak').value;
+  const sk = document.getElementById('wasabi-sk').value;
+  const btn = document.getElementById('btn-auto-create');
+  const hint = document.getElementById('auto-setup-hint');
+  if (!btn || !hint) return;
+  if (!ak || !sk) {
+    btn.disabled = true;
+    hint.textContent = 'Enter credentials above first';
+  } else if (selectedRegions.size === 0) {
+    btn.disabled = true;
+    hint.textContent = 'Select regions from results above';
+  } else {
+    btn.disabled = false;
+    hint.textContent = `${selectedRegions.size} sites: ${[...selectedRegions].join(', ')}`;
+  }
+}
+
+let pingAbort = false;
+
+function stopPingTest() { pingAbort = true; }
+
+async function pingAllRegions() {
+  if (!wasabiRegionsCache) return;
+  pingAbort = false;
+  const btn = document.getElementById('btn-ping-all');
+  const stopBtn = document.getElementById('btn-stop-ping');
+  const progress = document.getElementById('ping-progress');
+  btn.disabled = true;
+  stopBtn.style.display = '';
+  progress.classList.remove('hidden');
+  document.getElementById('recommendations-panel').classList.add('hidden');
+
+  setPhase('Scanning all regions...', '');
+  for (const r of wasabiRegionsCache) r._ping = { loading: true, pings: [] };
+  renderRegions(wasabiRegionsCache);
+
+  const phase1 = wasabiRegionsCache.map(async (r) => {
+    try {
+      const result = await api(`/api/wasabi/ping/${encodeURIComponent(r.region)}?count=1`, { method: 'POST' });
+      r._ping = { ...result, _phase: 1 };
+    } catch (e) {
+      r._ping = { reachable: false, error: e.message, pings: [], min_ms: 0, avg_ms: 0, max_ms: 0, _phase: 1 };
+    }
+    renderRegions(wasabiRegionsCache);
+  });
+  await Promise.all(phase1);
+
+  if (pingAbort) return finishPing();
+
+  let bestGeo = null, bestMs = Infinity;
+  for (const r of wasabiRegionsCache) {
+    if (r._ping?.reachable && r._ping.min_ms < bestMs) {
+      bestMs = r._ping.min_ms;
+      bestGeo = r.geo;
+    }
+  }
+  if (!bestGeo) return finishPing();
+
+  const durationSecs = parseInt(document.getElementById('deep-duration').value) || 30;
+  const nearRegions = wasabiRegionsCache.filter(r => r.geo === bestGeo && r._ping?.reachable);
+  const startTime = Date.now();
+  const endTime = startTime + durationSecs * 1000;
+  let round = 0;
+
+  while (Date.now() < endTime && !pingAbort) {
+    round++;
+    const elapsed = (Date.now() - startTime) / 1000;
+    const remaining = Math.ceil(durationSecs - elapsed);
+    const pct = Math.min(100, (elapsed / durationSecs) * 100);
+    setPhase(`Deep testing ${bestGeo} (round ${round})`, `${remaining}s`);
+    document.getElementById('ping-progress-bar').style.width = pct + '%';
+
+    const roundPings = nearRegions.map(async (r) => {
+      try {
+        const result = await api(`/api/wasabi/ping/${encodeURIComponent(r.region)}?count=3`, { method: 'POST' });
+        const allPings = [...r._ping.pings, ...result.pings];
+        r._ping = {
+          ...result, pings: allPings,
+          min_ms: Math.min(...allPings), max_ms: Math.max(...allPings),
+          avg_ms: Math.round(allPings.reduce((a, b) => a + b, 0) / allPings.length),
+          _phase: 2, _deep: true,
+          _p50: percentile(allPings, 50), _p95: percentile(allPings, 95), _p99: percentile(allPings, 99),
+        };
+      } catch (e) {}
+      renderRegions(wasabiRegionsCache, bestGeo);
+    });
+    await Promise.all(roundPings);
+  }
+
+  wasabiRegionsCache.sort((a, b) => {
+    if (a.geo !== b.geo) {
+      if (a.geo === bestGeo) return -1;
+      if (b.geo === bestGeo) return 1;
+      return 0;
+    }
+    return (a._ping?._p50 ?? a._ping?.avg_ms ?? 99999) - (b._ping?._p50 ?? b._ping?.avg_ms ?? 99999);
+  });
+
+  renderRegions(wasabiRegionsCache, bestGeo);
+  showRecommendations(wasabiRegionsCache, bestGeo);
+  finishPing();
+}
+
+function finishPing() {
+  document.getElementById('btn-ping-all').disabled = false;
+  document.getElementById('btn-stop-ping').style.display = 'none';
+  document.getElementById('ping-progress').classList.add('hidden');
+  document.getElementById('ping-progress-bar').style.width = '0%';
+}
+
+function setPhase(text, timer) {
+  document.getElementById('ping-phase').textContent = text;
+  document.getElementById('ping-timer').textContent = timer;
+}
+
+function percentile(arr, p) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
+async function showRecommendations(regions, bestGeo) {
+  const tested = regions.filter(r => r._ping?._deep && r._ping?.reachable);
+  if (!tested.length) return;
+  tested.sort((a, b) => (a._ping._p50 || a._ping.avg_ms) - (b._ping._p50 || b._ping.avg_ms));
+
+  let ecTotal = 3;
+  try { const ec = await api('/api/erasure'); ecTotal = ec.data_chunks + ec.parity_chunks; } catch(e) {}
+  const recommended = Math.min(tested.length, ecTotal);
+
+  selectedRegions.clear();
+  tested.slice(0, recommended).forEach(r => selectedRegions.add(r.region));
+  document.querySelectorAll('.region-card').forEach(c => c.classList.remove('selected'));
+  for (const id of selectedRegions) {
+    const card = document.getElementById('rc-' + id);
+    if (card) card.classList.add('selected');
+  }
+
+  let html = `<p style="font-size:12px;color:var(--text-2);margin-bottom:12px">
+    Ranked by p50 latency from ${tested[0]._ping.pings.length} samples. EC config needs ${ecTotal} sites &mdash; top ${recommended} pre-selected.
+  </p>`;
+  html += '<table><tr><th style="width:28px"></th><th>#</th><th>Region</th><th>Location</th><th>p50</th><th>p95</th><th>p99</th><th>Jitter</th><th>N</th></tr>';
+
+  tested.forEach((r, i) => {
+    const p = r._ping;
+    const checked = selectedRegions.has(r.region) ? 'checked' : '';
+    const isRec = i < recommended;
+    const rowBg = isRec ? 'background:rgba(92,183,122,0.06)' : '';
+    const tag = isRec ? ' <span class="badge badge-green">rec</span>' : '';
+    html += `<tr style="${rowBg}">
+      <td><input type="checkbox" ${checked} onchange="toggleRegionCheck('${r.region}', this.checked)" style="width:auto"></td>
+      <td>${i + 1}</td>
+      <td><strong>${esc(r.region)}</strong>${tag}</td>
+      <td>${esc(r.name)}</td>
+      <td style="font-weight:500;font-family:var(--mono)">${p._p50}ms</td>
+      <td style="font-family:var(--mono)">${p._p95}ms</td>
+      <td style="font-family:var(--mono)">${p._p99}ms</td>
+      <td style="font-family:var(--mono)">${p.max_ms - p.min_ms}ms</td>
+      <td>${p.pings.length}</td>
+    </tr>`;
+  });
+  html += '</table>';
+
+  document.getElementById('recommendations-content').innerHTML = html;
+  document.getElementById('recommendations-panel').classList.remove('hidden');
+  updateAutoSetupHint();
+}
+
+function toggleRegionCheck(regionId, checked) {
+  if (checked) selectedRegions.add(regionId);
+  else selectedRegions.delete(regionId);
+  const card = document.getElementById('rc-' + regionId);
+  if (card) card.classList.toggle('selected', checked);
+  updateAutoSetupHint();
+}
+
+async function autoCreateSites() {
+  const ak = document.getElementById('wasabi-ak').value;
+  const sk = document.getElementById('wasabi-sk').value;
+  if (!ak || !sk) { showAlert('Enter Wasabi credentials first', 'error'); return; }
+  if (selectedRegions.size === 0) { showAlert('Select at least one region', 'error'); return; }
+
+  const toCreate = wasabiRegionsCache
+    .filter(r => selectedRegions.has(r.region))
+    .sort((a, b) => (a._ping?._p50 || a._ping?.avg_ms || 999) - (b._ping?._p50 || b._ping?.avg_ms || 999));
+
+  const btn = document.getElementById('btn-auto-create');
+  btn.disabled = true;
+  btn.textContent = `Creating ${toCreate.length} sites...`;
+
+  let created = 0, errors = [];
+  for (const r of toCreate) {
+    try {
+      await api('/api/sites', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: r.region, region: r.region,
+          endpoint: 'https://' + r.endpoint,
+          access_key: ak, secret_key: sk,
+          url_style: 'path', priority: created,
+        }),
+      });
+      created++;
+      btn.textContent = `Created ${created}/${toCreate.length}...`;
+    } catch (e) { errors.push(`${r.region}: ${e.message}`); }
+  }
+
+  if (errors.length) showAlert(`Created ${created}. Errors: ${errors.join('; ')}`, created > 0 ? 'info' : 'error');
+  else showAlert(`Created ${created} sites`, 'success');
+
+  btn.textContent = 'Create Selected Sites';
+  btn.disabled = false;
+  loadStatus(); loadDashboardSites();
+}
+
+function onCredsChanged() { updateAutoSetupHint(); }
+
+function applyEcPreset(data, parity) {
+  document.getElementById('ec-data').value = data;
+  document.getElementById('ec-parity').value = parity;
+}
+
+async function loadErasure() {
+  try {
+    const ec = await api('/api/erasure');
+    document.getElementById('ec-data').value = ec.data_chunks;
+    document.getElementById('ec-parity').value = ec.parity_chunks;
+    document.getElementById('ec-mode').value = (ec.default_storage_mode || '').toLowerCase();
+    document.getElementById('ec-threshold').value = ec.hybrid_threshold_bytes;
+    document.getElementById('ec-block').value = ec.block_size_bytes;
+    document.getElementById('ec-read').value = ec.read_strategy === 'fan_out_all' ? 'fan_out_all' : 'fetch_minimum';
+    document.getElementById('ec-write-dist').value = ec.write_distribution || 'shuffle';
+  } catch (e) { showAlert('Failed to load: ' + e.message, 'error'); }
+}
+
+async function saveErasure() {
+  try {
+    await api('/api/erasure', {
+      method: 'PUT',
+      body: JSON.stringify({
+        data_chunks: parseInt(document.getElementById('ec-data').value),
+        parity_chunks: parseInt(document.getElementById('ec-parity').value),
+        default_storage_mode: document.getElementById('ec-mode').value,
+        hybrid_threshold_bytes: parseInt(document.getElementById('ec-threshold').value),
+        block_size_bytes: parseInt(document.getElementById('ec-block').value),
+        read_strategy: document.getElementById('ec-read').value,
+        write_distribution: document.getElementById('ec-write-dist').value,
+      }),
+    });
+    showAlert('Saved', 'success');
+    loadStatus();
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function loadBuckets() {
+  try {
+    const buckets = await api('/api/buckets');
+    if (buckets.length === 0) {
+      document.getElementById('buckets-list').innerHTML = '<span style="font-size:12px">No buckets. Created via S3 CreateBucket requests.</span>';
+      return;
+    }
+    let html = '<table><tr><th>Name</th><th>Mode</th><th>Objects</th><th>Size</th><th>Backend Buckets</th><th>Created</th></tr>';
+    for (const b of buckets) {
+      html += `<tr><td><strong>${esc(b.name)}</strong></td><td><span class="badge badge-muted">${esc(b.storage_mode)}</span></td><td>${b.object_count.toLocaleString()}</td><td>${formatBytes(b.total_size)}</td><td>${b.sites}</td><td style="font-size:11px">${new Date(b.created).toLocaleDateString()}</td></tr>`;
+    }
+    html += '</table>';
+    document.getElementById('buckets-list').innerHTML = html;
+  } catch (e) { showAlert('Failed to load buckets: ' + e.message, 'error'); }
+}
+
+async function loadPurge() {
+  try {
+    const p = await api('/api/purge');
+    let html = `<div class="stats-row" style="margin-bottom:12px"><div class="stat-card"><div class="value">${p.depth}</div><div class="label">Queue Depth</div></div></div>`;
+    if (p.recent.length > 0) {
+      html += '<table><tr><th>Bucket</th><th>Key</th><th>Chunks</th><th>Deleted</th><th>Attempts</th></tr>';
+      for (const e of p.recent) {
+        html += `<tr><td>${esc(e.bucket)}</td><td style="font-family:var(--mono);font-size:11px">${esc(e.key)}</td><td>${e.chunks}</td><td>${e.deleted}/${e.chunks}</td><td>${e.attempts}</td></tr>`;
+      }
+      html += '</table>';
+    } else {
+      html += '<span style="font-size:12px">No pending entries.</span>';
+    }
+    document.getElementById('purge-info').innerHTML = html;
+  } catch (e) { showAlert('Failed to load: ' + e.message, 'error'); }
+}
+
+async function exportConfig() {
+  try {
+    const cfg = await api('/api/config');
+    const json = JSON.stringify(cfg, null, 2);
+    document.getElementById('config-preview').textContent = json;
+    document.getElementById('config-preview').style.display = 'block';
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 's3prism-config.json'; a.click();
+    URL.revokeObjectURL(url);
+    showAlert('Exported', 'success');
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function importConfig(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const cfg = JSON.parse(text);
+    if (!confirm('Import this configuration? This will overwrite all current settings.')) return;
+    await api('/api/config', { method: 'PUT', body: JSON.stringify(cfg) });
+    showAlert('Imported', 'success');
+    loadStatus(); loadDashboardSites();
+  } catch (e) { showAlert('Import failed: ' + e.message, 'error'); }
+  event.target.value = '';
+}
+
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function init() {
+  loadStatus();
+  loadDashboardSites();
+}
+
+checkAuth();
+</script>
+</body>
+</html>
