@@ -20,6 +20,7 @@ pub fn routes(state: MgmtState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth/check", post(auth_check))
+        .route("/api/auth/login", post(auth_login))
         .route("/api/status", get(get_status))
         // Site management
         .route("/api/sites", get(list_sites))
@@ -39,6 +40,11 @@ pub fn routes(state: MgmtState) -> Router {
         .route("/api/config", put(save_full_config))
         // Bucket management
         .route("/api/buckets", get(list_buckets))
+        .route("/api/buckets/{name}", get(get_bucket_detail))
+        // Admin user management
+        .route("/api/users", get(list_admin_users))
+        .route("/api/users", post(create_admin_user))
+        .route("/api/users/{username}", delete(delete_admin_user))
         // Purge queue stats
         .route("/api/purge", get(get_purge_stats))
         // Wasabi region discovery
@@ -55,10 +61,47 @@ async fn health() -> &'static str {
 }
 
 async fn auth_check(State(state): State<MgmtState>) -> Response {
-    if state.mgmt_password.is_none() {
-        return (StatusCode::OK, Json(serde_json::json!({"auth_required": false}))).into_response();
+    let has_users = state.store.list_admin_users().map(|u| !u.is_empty()).unwrap_or(false);
+    let auth_required = has_users || state.mgmt_password.is_some();
+    (StatusCode::OK, Json(serde_json::json!({"auth_required": auth_required}))).into_response()
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    username: Option<String>,
+    password: String,
+}
+
+async fn auth_login(
+    State(state): State<MgmtState>,
+    Json(req): Json<LoginRequest>,
+) -> Response {
+    // Try user-based auth first
+    if let Some(username) = &req.username {
+        if let Ok(Some(user)) = state.store.get_admin_user(username) {
+            if verify_password(&req.password, &user.password_hash) {
+                // Return a token (the password hash serves as the session token)
+                let token = format!("user:{}", user.password_hash);
+                return (StatusCode::OK, Json(serde_json::json!({
+                    "token": token,
+                    "username": username,
+                }))).into_response();
+            }
+        }
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "invalid credentials"}))).into_response();
     }
-    (StatusCode::OK, Json(serde_json::json!({"auth_required": true}))).into_response()
+
+    // Fall back to legacy password auth
+    if let Some(pw) = &state.mgmt_password {
+        if req.password == *pw {
+            return (StatusCode::OK, Json(serde_json::json!({
+                "token": pw,
+                "username": "admin",
+            }))).into_response();
+        }
+    }
+
+    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "invalid credentials"}))).into_response()
 }
 
 #[derive(Serialize)]
@@ -406,6 +449,113 @@ async fn list_buckets(State(state): State<MgmtState>) -> Result<Json<serde_json:
         })
         .collect();
     Ok(Json(serde_json::json!(list)))
+}
+
+async fn get_bucket_detail(
+    State(state): State<MgmtState>,
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, MgmtError> {
+    let bucket = state.store.get_bucket(&name)?
+        .ok_or_else(|| MgmtError::NotFound("bucket not found".into()))?;
+    let stats = state.store.bucket_stats(&name).unwrap_or(
+        crate::metadata::store::BucketStats { object_count: 0, total_size: 0 }
+    );
+    let site_stats = state.store.bucket_site_stats(&name)?;
+
+    let backend_buckets: Vec<serde_json::Value> = bucket.backend_buckets.iter().map(|bb| {
+        let ss = site_stats.iter().find(|s| s.site == bb.site);
+        serde_json::json!({
+            "site": bb.site,
+            "bucket_name": bb.bucket_name,
+            "created": bb.created.to_rfc3339(),
+            "chunk_count": ss.map_or(0, |s| s.chunk_count),
+            "total_size": ss.map_or(0, |s| s.total_size),
+        })
+    }).collect();
+
+    Ok(Json(serde_json::json!({
+        "name": bucket.name,
+        "created": bucket.created.to_rfc3339(),
+        "storage_mode": format!("{:?}", bucket.storage_mode),
+        "data_chunks": bucket.data_chunks,
+        "parity_chunks": bucket.parity_chunks,
+        "object_count": stats.object_count,
+        "total_size": stats.total_size,
+        "backend_buckets": backend_buckets,
+    })))
+}
+
+// ── Admin Users ──
+
+async fn list_admin_users(State(state): State<MgmtState>) -> Result<Json<serde_json::Value>, MgmtError> {
+    let users = state.store.list_admin_users()?;
+    let list: Vec<serde_json::Value> = users.iter().map(|u| {
+        serde_json::json!({
+            "username": u.username,
+            "created": u.created.to_rfc3339(),
+        })
+    }).collect();
+    Ok(Json(serde_json::json!(list)))
+}
+
+#[derive(Deserialize)]
+struct CreateUserRequest {
+    username: String,
+    password: String,
+}
+
+async fn create_admin_user(
+    State(state): State<MgmtState>,
+    Json(req): Json<CreateUserRequest>,
+) -> Result<Json<serde_json::Value>, MgmtError> {
+    if req.username.is_empty() || req.password.is_empty() {
+        return Err(MgmtError::BadRequest("username and password required".into()));
+    }
+    if state.store.get_admin_user(&req.username)?.is_some() {
+        return Err(MgmtError::Conflict(format!("user '{}' already exists", req.username)));
+    }
+
+    let password_hash = hash_password(&req.password);
+    let user = crate::metadata::models::AdminUser {
+        username: req.username.clone(),
+        password_hash,
+        created: chrono::Utc::now(),
+    };
+
+    state.store.put_admin_user(&user)?;
+    info!("Created admin user '{}'", req.username);
+
+    Ok(Json(serde_json::json!({
+        "username": req.username,
+        "created": user.created.to_rfc3339(),
+    })))
+}
+
+async fn delete_admin_user(
+    State(state): State<MgmtState>,
+    axum::extract::Path(username): axum::extract::Path<String>,
+) -> Result<Response, MgmtError> {
+    // Prevent deleting the last admin user
+    let users = state.store.list_admin_users()?;
+    if users.len() <= 1 {
+        return Err(MgmtError::BadRequest("cannot delete the last admin user".into()));
+    }
+    let deleted = state.store.delete_admin_user(&username)?;
+    if !deleted {
+        return Err(MgmtError::NotFound("user not found".into()));
+    }
+    info!("Deleted admin user '{}'", username);
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+fn hash_password(password: &str) -> String {
+    use sha2::{Sha256, Digest};
+    let hash = Sha256::digest(format!("s3prism:{password}").as_bytes());
+    hex::encode(hash)
+}
+
+fn verify_password(password: &str, hash: &str) -> bool {
+    hash_password(password) == hash
 }
 
 // ── Purge Queue ──

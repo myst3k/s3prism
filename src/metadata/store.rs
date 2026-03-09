@@ -1,9 +1,16 @@
 use anyhow::Result;
 
-use super::models::{BucketMeta, MultipartUpload, ObjectMeta, PartMeta, PurgeEntry};
+use super::models::{AdminUser, BucketMeta, MultipartUpload, ObjectMeta, PartMeta, PurgeEntry};
 
 pub struct BucketStats {
     pub object_count: u64,
+    pub total_size: u64,
+}
+
+pub struct SiteStats {
+    pub site: String,
+    pub backend_bucket: String,
+    pub chunk_count: u64,
     pub total_size: u64,
 }
 
@@ -54,8 +61,15 @@ pub trait MetadataBackend: Send + Sync {
     fn list_parts(&self, upload_id: &str) -> Result<Vec<PartMeta>>;
     fn delete_parts(&self, upload_id: &str) -> Result<()>;
 
+    // -- Admin user operations --
+    fn put_admin_user(&self, user: &AdminUser) -> Result<()>;
+    fn get_admin_user(&self, username: &str) -> Result<Option<AdminUser>>;
+    fn delete_admin_user(&self, username: &str) -> Result<bool>;
+    fn list_admin_users(&self) -> Result<Vec<AdminUser>>;
+
     // -- Bucket stats --
     fn bucket_stats(&self, bucket: &str) -> Result<BucketStats>;
+    fn bucket_site_stats(&self, bucket: &str) -> Result<Vec<SiteStats>>;
 
     // -- Runtime config --
     fn get_runtime_config(&self) -> Result<Option<crate::config::RuntimeConfig>>;

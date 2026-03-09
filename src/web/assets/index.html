@@ -163,7 +163,8 @@
 <div id="login-overlay" class="login-overlay">
   <div class="login-box">
     <h1>S3Prism</h1>
-    <p>Enter management password to continue.</p>
+    <p>Sign in to continue.</p>
+    <input id="login-username" type="text" placeholder="Username" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
     <input id="login-password" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn-primary" onclick="doLogin()">Sign In</button>
     <div id="login-error" class="login-error hidden"></div>
@@ -199,6 +200,9 @@
       <span class="nav-icon">&gt;</span><span>Purge Queue</span>
     </button>
     <div class="nav-section">System</div>
+    <button class="nav-item" onclick="navigate('users', this)">
+      <span class="nav-icon">&gt;</span><span>Users</span>
+    </button>
     <button class="nav-item" onclick="navigate('config', this)">
       <span class="nav-icon">&gt;</span><span>Export / Import</span>
     </button>
@@ -360,6 +364,13 @@
         </div>
         <div id="buckets-list" style="color:var(--text-2)">Loading...</div>
       </div>
+      <div id="bucket-detail" class="card hidden" style="margin-top:12px">
+        <div class="card-header">
+          <h3 id="bucket-detail-title">Bucket Detail</h3>
+          <button class="btn-ghost btn-sm" onclick="closeBucketDetail()">Close</button>
+        </div>
+        <div id="bucket-detail-body" style="color:var(--text-2)">Loading...</div>
+      </div>
     </div>
 
     <!-- Purge Queue -->
@@ -374,6 +385,27 @@
     </div>
 
     <!-- Config -->
+    <!-- Users -->
+    <div id="page-users" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h3>Admin Users</h3>
+          <button class="btn-ghost btn-sm" onclick="loadUsers()">Refresh</button>
+        </div>
+        <div id="users-list" style="color:var(--text-2)">Loading...</div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="card-header"><h3>Create User</h3></div>
+        <div class="form-grid" style="padding:12px 16px">
+          <div class="form-group"><label>Username</label><input id="new-username" type="text" placeholder="Username"></div>
+          <div class="form-group"><label>Password</label><input id="new-password" type="password" placeholder="Password"></div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" onclick="createUser()">Create User</button>
+        </div>
+      </div>
+    </div>
+
     <div id="page-config" class="hidden">
       <div class="card">
         <div class="card-header"><h3>Export / Import</h3></div>
@@ -419,22 +451,24 @@ async function checkAuth() {
 }
 
 function doLogin() {
-  const pw = document.getElementById('login-password').value;
-  if (!pw) return;
-  fetch(API + '/api/status', {
-    headers: { 'Authorization': 'Bearer ' + pw }
+  const username = document.getElementById('login-username').value;
+  const password = document.getElementById('login-password').value;
+  if (!password) return;
+  const body = username ? { username, password } : { password };
+  fetch(API + '/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   }).then(r => {
-    if (r.ok) {
-      authToken = pw;
-      sessionStorage.setItem('s3prism_token', pw);
-      document.getElementById('login-overlay').classList.add('hidden');
-      init();
-    } else {
-      document.getElementById('login-error').textContent = 'Invalid password';
-      document.getElementById('login-error').classList.remove('hidden');
-    }
+    if (r.ok) return r.json();
+    throw new Error('invalid');
+  }).then(data => {
+    authToken = data.token;
+    sessionStorage.setItem('s3prism_token', data.token);
+    document.getElementById('login-overlay').classList.add('hidden');
+    init();
   }).catch(() => {
-    document.getElementById('login-error').textContent = 'Cannot reach server';
+    document.getElementById('login-error').textContent = 'Invalid credentials';
     document.getElementById('login-error').classList.remove('hidden');
   });
 }
@@ -471,13 +505,14 @@ function navigate(page, btn) {
   document.getElementById('page-' + page).classList.remove('hidden');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  const titles = { dashboard:'Dashboard', sites:'Sites', regions:'Regions', erasure:'Erasure Coding', buckets:'Buckets', purge:'Purge Queue', config:'Export / Import' };
+  const titles = { dashboard:'Dashboard', sites:'Sites', regions:'Regions', erasure:'Erasure Coding', buckets:'Buckets', purge:'Purge Queue', users:'Users', config:'Export / Import' };
   document.getElementById('page-title').textContent = titles[page] || page;
   if (page === 'sites') loadSites();
   if (page === 'regions') loadWasabiRegions();
   if (page === 'erasure') loadErasure();
   if (page === 'buckets') loadBuckets();
   if (page === 'purge') loadPurge();
+  if (page === 'users') loadUsers();
 }
 
 async function loadStatus() {
@@ -925,11 +960,37 @@ async function loadBuckets() {
     }
     let html = '<table><tr><th>Name</th><th>Mode</th><th>Objects</th><th>Size</th><th>Backend Buckets</th><th>Created</th></tr>';
     for (const b of buckets) {
-      html += `<tr><td><strong>${esc(b.name)}</strong></td><td><span class="badge badge-muted">${esc(b.storage_mode)}</span></td><td>${b.object_count.toLocaleString()}</td><td>${formatBytes(b.total_size)}</td><td>${b.sites}</td><td style="font-size:11px">${new Date(b.created).toLocaleDateString()}</td></tr>`;
+      html += `<tr style="cursor:pointer" onclick="showBucketDetail('${esc(b.name)}')"><td><strong>${esc(b.name)}</strong></td><td><span class="badge badge-muted">${esc(b.storage_mode)}</span></td><td>${b.object_count.toLocaleString()}</td><td>${formatBytes(b.total_size)}</td><td>${b.sites}</td><td style="font-size:11px">${new Date(b.created).toLocaleDateString()}</td></tr>`;
     }
     html += '</table>';
     document.getElementById('buckets-list').innerHTML = html;
   } catch (e) { showAlert('Failed to load buckets: ' + e.message, 'error'); }
+}
+
+async function showBucketDetail(name) {
+  const detail = document.getElementById('bucket-detail');
+  detail.classList.remove('hidden');
+  document.getElementById('bucket-detail-title').textContent = name;
+  document.getElementById('bucket-detail-body').innerHTML = 'Loading...';
+  try {
+    const b = await api('/api/buckets/' + encodeURIComponent(name));
+    let html = `<div class="stats-row" style="margin-bottom:12px">
+      <div class="stat-card"><div class="value">${b.object_count.toLocaleString()}</div><div class="label">Objects</div></div>
+      <div class="stat-card"><div class="value">${formatBytes(b.total_size)}</div><div class="label">Logical Size</div></div>
+      <div class="stat-card"><div class="value">${esc(b.storage_mode)}</div><div class="label">Storage Mode</div></div>
+    </div>`;
+    html += '<h4 style="margin:12px 0 8px;font-size:13px;color:var(--text-1)">Backend Bucket Mapping</h4>';
+    html += '<table><tr><th>Site</th><th>Backend Bucket</th><th>Chunks</th><th>Size on Site</th></tr>';
+    for (const bb of b.backend_buckets) {
+      html += `<tr><td><strong>${esc(bb.site)}</strong></td><td style="font-family:var(--mono);font-size:12px">${esc(bb.bucket_name)}</td><td>${bb.chunk_count.toLocaleString()}</td><td>${formatBytes(bb.total_size)}</td></tr>`;
+    }
+    html += '</table>';
+    document.getElementById('bucket-detail-body').innerHTML = html;
+  } catch (e) { showAlert('Failed to load bucket detail: ' + e.message, 'error'); }
+}
+
+function closeBucketDetail() {
+  document.getElementById('bucket-detail').classList.add('hidden');
 }
 
 async function loadPurge() {
@@ -990,6 +1051,44 @@ function formatBytes(bytes) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+async function loadUsers() {
+  try {
+    const users = await api('/api/users');
+    if (users.length === 0) {
+      document.getElementById('users-list').innerHTML = '<span style="font-size:12px">No admin users configured. Create one to enable login.</span>';
+      return;
+    }
+    let html = '<table><tr><th>Username</th><th>Created</th><th></th></tr>';
+    for (const u of users) {
+      html += `<tr><td><strong>${esc(u.username)}</strong></td><td style="font-size:11px">${new Date(u.created).toLocaleDateString()}</td><td><button class="btn-danger btn-xs" onclick="deleteUser('${esc(u.username)}')">Remove</button></td></tr>`;
+    }
+    html += '</table>';
+    document.getElementById('users-list').innerHTML = html;
+  } catch (e) { showAlert('Failed to load users: ' + e.message, 'error'); }
+}
+
+async function createUser() {
+  const username = document.getElementById('new-username').value;
+  const password = document.getElementById('new-password').value;
+  if (!username || !password) { showAlert('Username and password required', 'error'); return; }
+  try {
+    await api('/api/users', { method: 'POST', body: JSON.stringify({ username, password }) });
+    showAlert('User created', 'success');
+    document.getElementById('new-username').value = '';
+    document.getElementById('new-password').value = '';
+    loadUsers();
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Remove user "${username}"?`)) return;
+  try {
+    await api('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
+    showAlert('User removed', 'success');
+    loadUsers();
+  } catch (e) { showAlert(e.message, 'error'); }
 }
 
 function init() {

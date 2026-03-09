@@ -2,6 +2,8 @@
 
 **Multi-region erasure-coded S3 gateway.**
 
+> **Proof of concept — use at your own risk.** This is experimental software with no warranty. Not hardened for production use. Always maintain independent backups of your data.
+
 One beam in, many regions out. Recombine from anywhere.
 
 S3Prism is a standalone S3-compatible gateway that distributes your data across multiple S3-compatible storage regions using Reed-Solomon erasure coding. It presents a single S3 endpoint backed by cross-region durability, automatic failover, and best-latency reads.

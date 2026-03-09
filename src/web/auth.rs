@@ -13,10 +13,17 @@ pub async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    let password = match &state.mgmt_password {
-        Some(pw) => pw,
-        None => return next.run(req).await,
-    };
+    let has_users = state
+        .store
+        .list_admin_users()
+        .map(|u| !u.is_empty())
+        .unwrap_or(false);
+    let has_password = state.mgmt_password.is_some();
+
+    // No auth configured — allow everything
+    if !has_users && !has_password {
+        return next.run(req).await;
+    }
 
     let auth_header = req
         .headers()
@@ -34,13 +41,30 @@ pub async fn auth_middleware(
         }
     };
 
-    if token != password {
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": "invalid password"})),
-        )
-            .into_response();
+    // Check user-based token (format: "user:<password_hash>")
+    if let Some(hash) = token.strip_prefix("user:") {
+        if has_users {
+            let valid = state
+                .store
+                .list_admin_users()
+                .map(|users| users.iter().any(|u| u.password_hash == hash))
+                .unwrap_or(false);
+            if valid {
+                return next.run(req).await;
+            }
+        }
     }
 
-    next.run(req).await
+    // Check legacy password
+    if let Some(pw) = &state.mgmt_password {
+        if token == pw {
+            return next.run(req).await;
+        }
+    }
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({"error": "invalid token"})),
+    )
+        .into_response()
 }

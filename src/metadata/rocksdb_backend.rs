@@ -7,13 +7,15 @@ use std::sync::Arc;
 use tracing::info;
 
 use super::models::{BucketMeta, MultipartUpload, ObjectMeta, PartMeta, PurgeEntry};
-use super::store::{BucketStats, ListObjectsResult, MetadataBackend};
+use super::models::AdminUser;
+use super::store::{BucketStats, ListObjectsResult, MetadataBackend, SiteStats};
 
 const CF_OBJECTS: &str = "objects";
 const CF_BUCKETS: &str = "buckets";
 const CF_PURGE: &str = "purge";
 const CF_CONFIG: &str = "config";
 const CF_MULTIPART: &str = "multipart";
+const CF_CREDENTIALS: &str = "credentials";
 
 const RUNTIME_CONFIG_KEY: &[u8] = b"__runtime_config__";
 
@@ -43,6 +45,7 @@ impl RocksDbBackend {
             ColumnFamilyDescriptor::new(CF_PURGE, Options::default()),
             ColumnFamilyDescriptor::new(CF_CONFIG, Options::default()),
             ColumnFamilyDescriptor::new(CF_MULTIPART, Options::default()),
+            ColumnFamilyDescriptor::new(CF_CREDENTIALS, Options::default()),
         ];
 
         let db = DB::open_cf_descriptors(&opts, path, cf_descriptors)
@@ -522,6 +525,41 @@ impl MetadataBackend for RocksDbBackend {
         Ok(())
     }
 
+    fn put_admin_user(&self, user: &AdminUser) -> Result<()> {
+        let cf = self.db.cf_handle(CF_CREDENTIALS).context("credentials CF missing")?;
+        let value = serde_json::to_vec(user)?;
+        self.db.put_cf(&cf, user.username.as_bytes(), &value)?;
+        Ok(())
+    }
+
+    fn get_admin_user(&self, username: &str) -> Result<Option<AdminUser>> {
+        let cf = self.db.cf_handle(CF_CREDENTIALS).context("credentials CF missing")?;
+        match self.db.get_cf(&cf, username.as_bytes())? {
+            Some(value) => Ok(Some(serde_json::from_slice(&value)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn delete_admin_user(&self, username: &str) -> Result<bool> {
+        let cf = self.db.cf_handle(CF_CREDENTIALS).context("credentials CF missing")?;
+        if self.db.get_cf(&cf, username.as_bytes())?.is_none() {
+            return Ok(false);
+        }
+        self.db.delete_cf(&cf, username.as_bytes())?;
+        Ok(true)
+    }
+
+    fn list_admin_users(&self) -> Result<Vec<AdminUser>> {
+        let cf = self.db.cf_handle(CF_CREDENTIALS).context("credentials CF missing")?;
+        let iter = self.db.iterator_cf(&cf, IteratorMode::Start);
+        let mut users = Vec::new();
+        for item in iter {
+            let (_k, v) = item?;
+            users.push(serde_json::from_slice(&v)?);
+        }
+        Ok(users)
+    }
+
     fn bucket_stats(&self, bucket: &str) -> Result<BucketStats> {
         let cf = self
             .db
@@ -545,6 +583,40 @@ impl MetadataBackend for RocksDbBackend {
             object_count,
             total_size,
         })
+    }
+
+    fn bucket_site_stats(&self, bucket: &str) -> Result<Vec<SiteStats>> {
+        let cf = self
+            .db
+            .cf_handle(CF_OBJECTS)
+            .context("objects column family missing")?;
+        let prefix = format!("{bucket}\0");
+        let iter = self.db.prefix_iterator_cf(&cf, prefix.as_bytes());
+
+        let mut site_map: std::collections::HashMap<String, SiteStats> = std::collections::HashMap::new();
+
+        for item in iter {
+            let (k, v) = item?;
+            if !k.starts_with(prefix.as_bytes()) {
+                break;
+            }
+            if let Ok(meta) = serde_json::from_slice::<ObjectMeta>(&v) {
+                for chunk in &meta.chunks {
+                    let entry = site_map.entry(chunk.site.clone()).or_insert_with(|| SiteStats {
+                        site: chunk.site.clone(),
+                        backend_bucket: chunk.bucket.clone(),
+                        chunk_count: 0,
+                        total_size: 0,
+                    });
+                    entry.chunk_count += 1;
+                    entry.total_size += chunk.size;
+                }
+            }
+        }
+
+        let mut stats: Vec<SiteStats> = site_map.into_values().collect();
+        stats.sort_by(|a, b| a.site.cmp(&b.site));
+        Ok(stats)
     }
 
     fn create_checkpoint(&self, path: &str) -> Result<()> {

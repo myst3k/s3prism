@@ -157,3 +157,10 @@ pub struct PartMeta {
     pub site: String,
     pub backend_bucket: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminUser {
+    pub username: String,
+    pub password_hash: String,
+    pub created: DateTime<Utc>,
+}
