@@ -25,6 +25,17 @@ Think of your storage regions as disks in a RAID array — S3Prism is the RAID c
 - **Region discovery** — Auto-discover available storage regions with latency benchmarking to find the best sites for your deployment.
 - **Single binary** — No external dependencies. RocksDB for metadata, your S3-compatible storage for data.
 
+## Screenshots
+<img width="1222" height="494" alt="image" src="https://github.com/user-attachments/assets/fbca4d43-d3aa-4f6d-905a-884853605ecb" />
+
+<img width="1231" height="558" alt="image" src="https://github.com/user-attachments/assets/124ba241-280a-458e-98e4-75c027037976" />
+
+<img width="981" height="1146" alt="image" src="https://github.com/user-attachments/assets/3a647c62-485a-488a-85f4-5746a3d55a96" />
+
+<img width="1238" height="607" alt="image" src="https://github.com/user-attachments/assets/6557f24d-54a5-4a74-a8a9-348d419fff5f" />
+
+
+
 ## Quick Start
 
 ### Build
